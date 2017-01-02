@@ -1,0 +1,9 @@
+[package]
+name = "osmosis_snippets"
+version = "0.1.0"
+authors = ["NLY <noemie.lehuby@canaltp.fr>"]
+
+[dependencies]
+rustc-serialize = "*"
+osmpbfreader = "*"
+csv = "0.14.7"
