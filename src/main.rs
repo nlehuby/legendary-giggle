@@ -1,16 +1,18 @@
 extern crate osmpbfreader;
+extern crate rustc_serialize;
 extern crate csv;
 
-#[derive(Debug, Clone)]
-pub struct LineToRoute {
+#[derive(Debug, Clone, RustcEncodable)]
+pub struct RouteToLine {
     pub parent_id: String,
     pub member_id: String,
     pub member_role: String,
 }
 
+#[allow(dead_code)]
+/// only use for debugging purposes
 fn wanted(obj: &osmpbfreader::OsmObj) -> bool{
     match *obj {
-        //osmpbfreader::OsmObj::Relation(ref rel) => rel.id == 7444,//id of relation for Paris
         //osmpbfreader::OsmObj::Relation(ref rel) => rel.id == 1066570,//id of relation for bus 67
         osmpbfreader::OsmObj::Relation(ref rel) => rel.id == 1257187,//id of relation for bus 57
         _ => false,
@@ -23,21 +25,19 @@ fn is_route_master(obj: &osmpbfreader::OsmObj) -> bool {
         .map_or(false, |v| ["route_master"].contains(&v.as_str()))
 }
 
-fn extract_children_from_route_master(route_master: &osmpbfreader::Relation) -> Option<LineToRoute> {
-    // retourner plutôt un vecteur de parcours pour chaque ligne ?
+fn extract_children_from_route_master(route_master: &osmpbfreader::Relation) -> Option<Vec<RouteToLine>> {
+    let mut all_routes_for_this_line: Vec<RouteToLine> = vec![];
+
     for member in &route_master.refs{
         match member.member {
             osmpbfreader::OsmId::Relation(rel_id) => {
-                println!("{:?}, {:?}, {:?}", route_master.id, rel_id, member.role);
-                Some(LineToRoute { parent_id: route_master.id.to_string(), member_id: rel_id.to_string(), member_role: member.role.to_string() });
+                all_routes_for_this_line.push(RouteToLine { parent_id: route_master.id.to_string(), member_id: rel_id.to_string(), member_role: member.role.to_string() });
                 }
             _ => {;}
         }
     }
 
-    //TODO
-    Some(LineToRoute { parent_id: route_master.id.to_string(), member_id: route_master.refs[0].role.to_string(), member_role: route_master.refs[0].role.to_string() })
-
+    Some(all_routes_for_this_line)
 }
 
 fn main() {
@@ -45,18 +45,21 @@ fn main() {
     let path = std::path::Path::new(&filename);
     let r = std::fs::File::open(&path).unwrap();
     let mut pbf = osmpbfreader::OsmPbfReader::new(r);
-    let objects = osmpbfreader::get_objs_and_deps(&mut pbf, wanted).unwrap();
+    let objects = osmpbfreader::get_objs_and_deps(&mut pbf, is_route_master).unwrap();
 
-    /*let mut wtr = csv::Writer::from_file("relations_members.csv").unwrap();
-        wtr.encode(("member_id", "member_role", "parent_relation_id"))
-            .unwrap(); */
-
-    let result:Vec<LineToRoute> = objects.values()
+    let result:Vec<RouteToLine> = objects.values()
         .filter(|x| is_route_master(*x))
         .filter_map(osmpbfreader::OsmObj::relation)
         .filter_map(|relation| extract_children_from_route_master(relation))
-        .collect();
+        .into_iter().flat_map(|x| x).collect();
 
+    let csv_file = std::path::Path::new("relations_members.csv");
+    let mut wtr = csv::Writer::from_file(csv_file).unwrap();
+    wtr.encode(("parent_relation_id", "member_id", "member_role"))
+        .unwrap();
 
-    println!("{:?}", result);
+    for route_to_line in &result {
+        wtr.encode(route_to_line).unwrap();
+    }
+
 }
